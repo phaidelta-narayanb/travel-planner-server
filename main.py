@@ -92,6 +92,12 @@ app.add_middleware(
 )
 
 
+def serve() -> None:
+    import uvicorn
+
+    uvicorn.run("main:app", reload=True, env_file=".env", host="0.0.0.0")
+
+
 def get_db() -> Generator[Session, None, None]:
     with SessionLocal() as db:
         yield db

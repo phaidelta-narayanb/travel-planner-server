@@ -12,6 +12,16 @@ dependencies = [
     "uvicorn>=0.54.0",
 ]
 
+[build-system]
+requires = ["setuptools>=75"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools]
+py-modules = ["main", "models", "llm_models"]
+
+[project.scripts]
+serve = "main:serve"
+
 [dependency-groups]
 dev = [
     "python-dotenv>=1.2.4",
