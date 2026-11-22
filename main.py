@@ -39,8 +39,6 @@ allowed_origins = os.getenv(
     "http://localhost:5173,http://127.0.0.1:5173,http://localhost:4173",
 ).split(",")
 
-print(allowed_origins)
-
 connect_args = {"check_same_thread": False} if DATABASE_URL.startswith("sqlite") else {}
 engine = create_engine(DATABASE_URL, connect_args=connect_args)
 SessionLocal = sessionmaker(bind=engine, expire_on_commit=False)
