@@ -6,6 +6,7 @@ import os
 import secrets
 import time
 import uuid
+from datetime import date
 from typing import Annotated, Generator
 
 from fastapi import Depends, FastAPI, Header, HTTPException, status
@@ -14,11 +15,22 @@ from sqlalchemy import JSON, Float, ForeignKey, Integer, String, UniqueConstrain
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import DeclarativeBase, Mapped, Session, mapped_column, sessionmaker
 
+from ai_service import (
+    AIConfigurationError,
+    AIOutputError,
+    AIProviderError,
+    propose_itinerary,
+    suggest_destinations,
+)
 from models import (
     AuthResponse,
     Credentials,
     CurrentUserResponse,
+    DestinationPreferences,
+    DestinationSuggestionsResponse,
     HealthResponse,
+    ItineraryProposalRequest,
+    ItineraryProposalResponse,
     LatestSnapshotResponse,
     LogoutResponse,
     PlannerData,
@@ -193,6 +205,26 @@ def create_session(db: Session, user: User) -> AuthResponse:
 @app.get("/health", response_model=HealthResponse)
 def health() -> HealthResponse:
     return HealthResponse(status="ok")
+
+
+@app.post("/api/ai/destinations", response_model=DestinationSuggestionsResponse)
+def ai_destinations(payload: DestinationPreferences, user: CurrentUser) -> DestinationSuggestionsResponse:
+    try:
+        return suggest_destinations(payload, date.today())
+    except AIConfigurationError as error:
+        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=str(error)) from error
+    except (AIProviderError, AIOutputError) as error:
+        raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=str(error)) from error
+
+
+@app.post("/api/ai/itinerary", response_model=ItineraryProposalResponse)
+def ai_itinerary(payload: ItineraryProposalRequest, user: CurrentUser) -> ItineraryProposalResponse:
+    try:
+        return propose_itinerary(payload)
+    except AIConfigurationError as error:
+        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=str(error)) from error
+    except (AIProviderError, AIOutputError) as error:
+        raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=str(error)) from error
 
 
 @app.post(

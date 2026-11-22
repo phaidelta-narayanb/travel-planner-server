@@ -1,6 +1,36 @@
-from pydantic import Field, model_validator
+from typing import Literal
 
-from models import PlanEvent, PlannerData, Trip
+from pydantic import BaseModel, Field, model_validator
+
+from models import DestinationSuggestion, PlanEvent, PlannerData, Trip
+
+
+class LLMDestinationSuggestions(BaseModel):
+    summary: str
+    suggestions: list[DestinationSuggestion]
+
+
+class LLMProposedChange(BaseModel):
+    action: Literal["add", "update", "remove"]
+    event_id: str | None = None
+    event: PlanEvent | None = None
+    summary: str
+    rationale: str
+
+    @model_validator(mode="after")
+    def validate_change(self) -> "LLMProposedChange":
+        if self.action == "add" and (self.event is None or self.event_id is not None):
+            raise ValueError("An added event must have event data and no event_id")
+        if self.action == "update" and (self.event is None or not self.event_id):
+            raise ValueError("An updated event must have event data and an event_id")
+        if self.action == "remove" and (self.event is not None or not self.event_id):
+            raise ValueError("A removed event must have an event_id and no event data")
+        return self
+
+
+class LLMItineraryProposal(BaseModel):
+    summary: str
+    changes: list[LLMProposedChange]
 
 
 class LLMTrip(Trip):

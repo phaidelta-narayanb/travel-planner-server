@@ -13,7 +13,7 @@ RUN pip install --no-cache-dir uv
 COPY pyproject.toml uv.lock ./
 RUN uv sync --frozen --no-dev --no-install-project
 
-COPY main.py models.py llm_models.py ./
+COPY main.py models.py llm_models.py ai_service.py ./
 COPY entrypoint.sh /usr/local/bin/entrypoint.sh
 
 RUN chmod 755 /usr/local/bin/entrypoint.sh && mkdir -p /data

@@ -7,6 +7,7 @@ requires-python = ">=3.13"
 dependencies = [
     "email-validator>=2.4.0",
     "fastapi>=0.165.0",
+    "openai>=2.0.0",
     "pydantic>=2,<3",
     "sqlalchemy>=2.1.9",
     "uvicorn>=0.54.0",
@@ -17,12 +18,14 @@ requires = ["setuptools>=75"]
 build-backend = "setuptools.build_meta"
 
 [tool.setuptools]
-py-modules = ["main", "models", "llm_models"]
+py-modules = ["main", "models", "llm_models", "ai_service"]
 
 [project.scripts]
 serve = "main:serve"
 
 [dependency-groups]
 dev = [
+    "httpx>=0.28.1",
+    "pytest>=9.2.0",
     "python-dotenv>=1.2.4",
 ]

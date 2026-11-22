@@ -69,6 +69,91 @@ class PlannerData(BaseModel):
     events: list[PlanEvent]
 
 
+class DestinationPreferences(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    departure_region: str | None = Field(default=None, max_length=120)
+    destination: str | None = Field(default=None, max_length=160)
+    start_date: DateOnly | None = None
+    end_date: DateOnly | None = None
+    budget: Literal["budget", "moderate", "premium", "luxury", "flexible"] | None = None
+    interests: list[str] = Field(default_factory=list, max_length=10)
+    travel_pace: Literal["relaxed", "balanced", "packed"] | None = None
+    travel_party: str | None = Field(default=None, max_length=120)
+    notes: str | None = Field(default=None, max_length=1000)
+
+    @field_validator("start_date", "end_date")
+    @classmethod
+    def validate_date(cls, value: str | None) -> str | None:
+        if value is not None:
+            date.fromisoformat(value)
+        return value
+
+    @field_validator("interests")
+    @classmethod
+    def validate_interests(cls, values: list[str]) -> list[str]:
+        if any(not value.strip() or len(value) > 80 for value in values):
+            raise ValueError("Interests must be non-empty and at most 80 characters")
+        return values
+
+    @model_validator(mode="after")
+    def validate_date_range(self) -> "DestinationPreferences":
+        if (self.start_date is None) != (self.end_date is None):
+            raise ValueError("Provide both start_date and end_date, or neither")
+        if self.start_date and self.end_date and self.end_date < self.start_date:
+            raise ValueError("end_date must be on or after start_date")
+        return self
+
+
+class DestinationSuggestion(BaseModel):
+    trip_name: str = Field(min_length=1, max_length=120)
+    destination: str = Field(min_length=1, max_length=160)
+    overview: str = Field(min_length=1, max_length=1000)
+    why_it_fits: str = Field(min_length=1, max_length=1000)
+    seasonal_fit: str = Field(min_length=1, max_length=800)
+    ideal_duration_days: int = Field(ge=1, le=30)
+
+
+class DestinationSuggestionsResponse(BaseModel):
+    summary: str
+    current_date: DateOnly
+    suggestions: list[DestinationSuggestion] = Field(min_length=1, max_length=5)
+    notice: str
+
+
+ItineraryFocus = Literal["activities", "sightseeing", "transport", "stays", "food", "shopping"]
+
+
+class ItineraryProposalRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    trip: Trip
+    events: list[PlanEvent] = Field(max_length=200)
+    focus_areas: list[ItineraryFocus] = Field(default_factory=list, max_length=6)
+    notes: str | None = Field(default=None, max_length=2000)
+
+    @model_validator(mode="after")
+    def validate_event_trip_ids(self) -> "ItineraryProposalRequest":
+        if any(event.tripId != self.trip.id for event in self.events):
+            raise ValueError("Every event must belong to the requested trip")
+        return self
+
+
+class ProposedChange(BaseModel):
+    change_id: str
+    action: Literal["add", "update", "remove"]
+    event_id: str | None
+    event: PlanEvent | None
+    summary: str
+    rationale: str
+
+
+class ItineraryProposalResponse(BaseModel):
+    summary: str
+    changes: list[ProposedChange] = Field(max_length=30)
+    notice: str
+
+
 class Credentials(BaseModel):
     email: EmailStr
     password: str = Field(min_length=8, max_length=128)
