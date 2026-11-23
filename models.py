@@ -105,6 +105,9 @@ class DestinationPreferences(BaseModel):
         return self
 
 
+ItineraryFocus = Literal["activities", "sightseeing", "transport", "stays", "food", "shopping"]
+
+
 class DestinationSuggestion(BaseModel):
     trip_name: str = Field(min_length=1, max_length=120)
     destination: str = Field(min_length=1, max_length=160)
@@ -112,6 +115,7 @@ class DestinationSuggestion(BaseModel):
     why_it_fits: str = Field(min_length=1, max_length=1000)
     seasonal_fit: str = Field(min_length=1, max_length=800)
     ideal_duration_days: int = Field(ge=1, le=30)
+    recommended_focus_areas: list[ItineraryFocus] = Field(max_length=6)
 
 
 class DestinationSuggestionsResponse(BaseModel):
@@ -121,14 +125,12 @@ class DestinationSuggestionsResponse(BaseModel):
     notice: str
 
 
-ItineraryFocus = Literal["activities", "sightseeing", "transport", "stays", "food", "shopping"]
-
-
 class ItineraryProposalRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     trip: Trip
     events: list[PlanEvent] = Field(max_length=200)
+    departure_location: str | None = Field(default=None, max_length=160)
     focus_areas: list[ItineraryFocus] = Field(default_factory=list, max_length=6)
     notes: str | None = Field(default=None, max_length=2000)
 

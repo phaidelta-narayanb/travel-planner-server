@@ -50,6 +50,7 @@ def test_authenticated_destination_endpoint_returns_typed_suggestions(monkeypatc
                 why_it_fits="It suits the requested pace.",
                 seasonal_fit="Conditions are typically mild at this time.",
                 ideal_duration_days=5,
+                recommended_focus_areas=["activities", "sightseeing", "food"],
             )
             for index in range(1, 6)
         ],
@@ -181,6 +182,44 @@ def test_itinerary_rejects_a_proposal_for_an_unknown_event(monkeypatch) -> None:
         ai_service.propose_itinerary(request)
 
 
+def test_same_origin_and_destination_suppresses_flight_suggestions(monkeypatch) -> None:
+    trip = example_trip().model_copy(update={"destination": "Goa, India"})
+    flight = PlanEvent(
+        id="generated-flight",
+        tripId=trip.id,
+        title="Flight arrival in Goa",
+        type="flight",
+        start="2027-04-10T09:00",
+    )
+    proposal = LLMItineraryProposal(
+        summary="A proposed trip plan.",
+        changes=[
+            LLMProposedChange(
+                action="add",
+                event=flight,
+                summary="Add an arrival flight.",
+                rationale="Travel to the destination.",
+            ),
+        ],
+    )
+    fake_client = SimpleNamespace(
+        responses=SimpleNamespace(
+            parse=lambda **kwargs: SimpleNamespace(output_parsed=proposal),
+        ),
+    )
+    monkeypatch.setattr(ai_service, "_client", lambda: fake_client)
+    request = ItineraryProposalRequest(
+        trip=trip,
+        events=[],
+        departure_location="goa india",
+        focus_areas=["transport"],
+    )
+
+    response = ai_service.propose_itinerary(request)
+
+    assert response.changes == []
+
+
 def test_destination_service_sets_date_from_server_context(monkeypatch) -> None:
     from llm_models import LLMDestinationSuggestions
 
@@ -194,6 +233,7 @@ def test_destination_service_sets_date_from_server_context(monkeypatch) -> None:
                 why_it_fits="It suits the requested pace.",
                 seasonal_fit="Conditions are typically mild at this time.",
                 ideal_duration_days=5,
+                recommended_focus_areas=["activities", "sightseeing", "food"],
             )
             for index in range(1, 6)
         ],
