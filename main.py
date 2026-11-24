@@ -7,10 +7,11 @@ import secrets
 import time
 import uuid
 from datetime import date
-from typing import Annotated, Generator
+from typing import Annotated, Callable, Generator, TypeVar
 
 from fastapi import Depends, FastAPI, Header, HTTPException, status
 from fastapi.middleware.cors import CORSMiddleware
+from pydantic import BaseModel
 from sqlalchemy import JSON, Float, ForeignKey, Integer, String, UniqueConstraint, create_engine, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import DeclarativeBase, Mapped, Session, mapped_column, sessionmaker
@@ -88,6 +89,21 @@ class Snapshot(Base):
     version: Mapped[int] = mapped_column(Integer)
     data: Mapped[dict] = mapped_column(JSON)
     created_at: Mapped[float] = mapped_column(Float, default=time.time)
+
+
+class AIQuery(Base):
+    __tablename__ = "ai_queries"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
+    query_type: Mapped[str] = mapped_column(String(32), index=True)
+    model: Mapped[str] = mapped_column(String(128))
+    request_data: Mapped[dict] = mapped_column(JSON)
+    response_data: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    status: Mapped[str] = mapped_column(String(16), default="pending")
+    error: Mapped[str | None] = mapped_column(String(1000), nullable=True)
+    created_at: Mapped[float] = mapped_column(Float, default=time.time, index=True)
+    completed_at: Mapped[float | None] = mapped_column(Float, nullable=True)
 
 
 Base.metadata.create_all(engine)
@@ -177,12 +193,45 @@ def current_user(
 
 
 CurrentUser = Annotated[User, Depends(current_user)]
+T = TypeVar("T", bound=BaseModel)
 
 
 def latest_snapshot(db: Session, user_id: int) -> Snapshot | None:
     return db.scalar(
         select(Snapshot).where(Snapshot.user_id == user_id).order_by(Snapshot.version.desc()).limit(1)
     )
+
+
+def run_logged_ai_query(
+    db: Session,
+    user: User,
+    query_type: str,
+    request_data: dict,
+    run: Callable[[], T],
+) -> T:
+    record = AIQuery(
+        user_id=user.id,
+        query_type=query_type,
+        model=os.getenv("OPENAI_MODEL", "gpt-4.1-mini"),
+        request_data=request_data,
+    )
+    db.add(record)
+    db.commit()
+
+    try:
+        response = run()
+    except (AIConfigurationError, AIProviderError, AIOutputError) as error:
+        record.status = "failed"
+        record.error = str(error)
+        record.completed_at = time.time()
+        db.commit()
+        raise
+
+    record.status = "succeeded"
+    record.response_data = response.model_dump(mode="json")
+    record.completed_at = time.time()
+    db.commit()
+    return response
 
 
 def create_session(db: Session, user: User) -> AuthResponse:
@@ -208,9 +257,16 @@ def health() -> HealthResponse:
 
 
 @app.post("/api/ai/destinations", response_model=DestinationSuggestionsResponse)
-def ai_destinations(payload: DestinationPreferences, user: CurrentUser) -> DestinationSuggestionsResponse:
+def ai_destinations(payload: DestinationPreferences, user: CurrentUser, db: DbSession) -> DestinationSuggestionsResponse:
+    current_date = date.today()
     try:
-        return suggest_destinations(payload, date.today())
+        return run_logged_ai_query(
+            db,
+            user,
+            "destinations",
+            {"preferences": payload.model_dump(mode="json"), "current_date": current_date.isoformat()},
+            lambda: suggest_destinations(payload, current_date),
+        )
     except AIConfigurationError as error:
         raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=str(error)) from error
     except (AIProviderError, AIOutputError) as error:
@@ -218,9 +274,15 @@ def ai_destinations(payload: DestinationPreferences, user: CurrentUser) -> Desti
 
 
 @app.post("/api/ai/itinerary", response_model=ItineraryProposalResponse)
-def ai_itinerary(payload: ItineraryProposalRequest, user: CurrentUser) -> ItineraryProposalResponse:
+def ai_itinerary(payload: ItineraryProposalRequest, user: CurrentUser, db: DbSession) -> ItineraryProposalResponse:
     try:
-        return propose_itinerary(payload)
+        return run_logged_ai_query(
+            db,
+            user,
+            "itinerary",
+            payload.model_dump(mode="json"),
+            lambda: propose_itinerary(payload),
+        )
     except AIConfigurationError as error:
         raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=str(error)) from error
     except (AIProviderError, AIOutputError) as error:
